@@ -1,0 +1,24 @@
+{
+  "name": "dsh-workspace-files",
+  "version": "1.0.0",
+  "description": "DeepSeek Harness (DSH) 工作区文件面板插件：右侧树形文件浏览、右键引用到输入框、Trae 风格交互、文件类型图标、Hermes/L's Image 主题与字体设置。",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "cordis",
+    "workspace",
+    "file-panel",
+    "theme"
+  ],
+  "license": "MIT",
+  "main": "src/host.js",
+  "cordis": {
+    "interface": {
+      "host": "src/host.js",
+      "client": "src/client.js"
+    }
+  },
+  "scripts": {
+    "check": "node -e \"new Function(require('fs').readFileSync('src/host.js','utf8')); new Function(require('fs').readFileSync('src/client.js','utf8')); console.log('syntax ok')\""
+  }
+}
