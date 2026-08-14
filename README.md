@@ -2,6 +2,8 @@
 
 一个运行在 [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/dsh) 上的动态 Cordis 插件，为会话提供右侧工作区文件面板。
 
+<img width="2559" height="1374" alt="图片" src="https://github.com/user-attachments/assets/1816e28c-a5be-45de-af90-265eae257b40" />
+
 ## 功能
 
 - **右侧可拖拽文件面板**：树形浏览工作区文件，拖动左边框调整宽度，拖到最右自动关闭
