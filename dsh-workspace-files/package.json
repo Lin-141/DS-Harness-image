@@ -1,24 +1,47 @@
 {
-  "name": "dsh-workspace-files",
+  "name": "@dsh-external/dsh-workspace-files",
   "version": "1.0.0",
-  "description": "DeepSeek Harness (DSH) 工作区文件面板插件：右侧树形文件浏览、右键引用到输入框、Trae 风格交互、文件类型图标、Hermes/L's Image 主题与字体设置。",
+  "description": "DeepSeek Harness (DSH) 工作区文件面板插件（部署级 bundle）：右侧树形文件浏览、右键引用到输入框、Trae 风格交互、文件类型图标、Hermes / L's Image 主题与字体设置。装配进 profile bundles，重启自动加载、不再丢失。",
   "keywords": [
     "dsh",
     "deepseek-harness",
     "cordis",
+    "bundle",
     "workspace",
     "file-panel",
-    "theme"
+    "theme",
+    "file-icons"
+  ],
+  "private": true,
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml"
   ],
   "license": "MIT",
-  "main": "src/host.js",
-  "cordis": {
-    "interface": {
-      "host": "src/host.js",
-      "client": "src/client.js"
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-slots"
+      ],
+      "platform": "web"
     }
   },
-  "scripts": {
-    "check": "node -e \"new Function(require('fs').readFileSync('src/host.js','utf8')); new Function(require('fs').readFileSync('src/client.js','utf8')); console.log('syntax ok')\""
+  "peerDependencies": {
+    "cordis": ">=4.0.0-rc <5"
   }
 }
