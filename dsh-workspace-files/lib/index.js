@@ -336,11 +336,13 @@ handlers['workspace-root'] = async () => {
           const events = (loaded && loaded.events) || []
           for (const e of events) {
             if (e && e.type === 'assistant/message' && e.data && e.data.message && e.data.message.source && e.data.message.id) {
-              modelCache.set(String(e.data.message.id), e.data.message.source.model || null)
+              const s = e.data.message.source
+              modelCache.set(String(e.data.message.id), { model: s.model || null, provider: s.provider || null })
             }
           }
         }
-        return { model: modelCache.get(String(args.messageId)) || null, cached: modelCache.size }
+        const entry = modelCache.get(String(args.messageId))
+        return { model: entry ? entry.model : null, provider: entry ? entry.provider : null, cached: modelCache.size }
       } catch (err) {
         return { model: null, error: String((err && err.message) || err) }
       }
