@@ -1201,6 +1201,92 @@ const TRAE_BASE_ICONS = {"js":"icon.14.explorer.lang.js.svg","jsx":"icon.14.expl
       (props) => React.createElement(AppearancePage, props),
     ))
 
+    // ===== 每条消息 token 价格 + 未命中率（显示在分支按钮右边） =====
+    function wfrIsPeak(timeMs) {
+      if (!timeMs) return false
+      const bj = new Date(timeMs + 8 * 3600 * 1000) // 北京时间
+      const h = bj.getUTCHours()
+      return (h >= 9 && h < 12) || (h >= 14 && h < 18)
+    }
+    const WFR_PRICES = {
+      'deepseek-v4-pro': { hit: [0.15, 0.30], miss: [4.5, 9.0], out: [13.5, 27.0] },
+      'deepseek-v4-flash': { hit: [0.05, 0.10], miss: [1.5, 3.0], out: [4.5, 9.0] },
+    }
+    function TokenCostCell(props) {
+      const nodes = props.useSession ? props.useSession((s) => (s && s.chat) ? s.chat.nodes : undefined) : undefined
+      const messageId = props.messageId
+      const [model, setModel] = React.useState(null)
+      React.useEffect(() => {
+        let alive = true
+        if (props.sessionId && messageId) {
+          host.call('turn-model', { sessionId: props.sessionId, messageId: messageId }).then((res) => {
+            if (alive && res && typeof res.model === 'string') setModel(res.model)
+          }).catch(() => {})
+        }
+        return () => { alive = false }
+      }, [props.sessionId, messageId])
+      let turn = null
+      let peak = false
+      let matched = false
+      if (nodes) {
+        for (const node of nodes.values()) {
+          if (node && node.kind === 'assistant-step' && node.data && node.data.finalNode && node.data.finalNode.messageId === messageId) {
+            turn = node.data.turn
+            peak = wfrIsPeak(node.data.time)
+            matched = true
+            break
+          }
+        }
+      }
+      let hit = 0, miss = 0, out = 0, reason = 0
+      let sawUsage = false
+      if (nodes && turn !== null) {
+        for (const node of nodes.values()) {
+          if (node && node.kind === 'assistant-step' && node.data && node.data.turn === turn && node.data.usage) {
+            const u = node.data.usage
+            sawUsage = true
+            hit += typeof u.cacheReadTokens === 'number' ? u.cacheReadTokens : 0
+            miss += (typeof u.uncachedInputTokens === 'number' ? u.uncachedInputTokens : 0) + (typeof u.inputTokens === 'number' ? u.inputTokens : 0)
+            out += typeof u.outputTokens === 'number' ? u.outputTokens : 0
+            reason += typeof u.reasoningTokens === 'number' ? u.reasoningTokens : 0
+          }
+        }
+      }
+      const totalInput = hit + miss
+      const M = 1000000
+      const price = WFR_PRICES[model] || WFR_PRICES['deepseek-v4-flash']
+      const pi = peak ? 1 : 0
+      const cost = hit / M * price.hit[pi] + miss / M * price.miss[pi] + (out + reason) / M * price.out[pi]
+      const missRate = totalInput > 0 ? miss / totalInput : 0
+      const baseStyle = { order: 99, color: 'var(--dsw-alias-label-tertiary, var(--dsw-alias-label-secondary))', fontSize: '12px', whiteSpace: 'nowrap', marginLeft: '4px' }
+      if (!matched) {
+        return React.createElement('span', {
+          className: 'wfr-tokencost',
+          title: '未匹配 messageId=' + String(messageId) + ' nodes=' + String(nodes ? nodes.size : 'none'),
+          style: baseStyle,
+        }, '·')
+      }
+      if (!sawUsage || (totalInput <= 0 && out <= 0 && reason <= 0)) {
+        return React.createElement('span', {
+          className: 'wfr-tokencost',
+          title: '匹配到 turn=' + String(turn) + ' 但 usage 为空',
+          style: baseStyle,
+        }, '∅')
+      }
+      const label = '¥' + cost.toFixed(4) + ' · 未命中 ' + (missRate * 100).toFixed(1) + '%'
+      const title = '模型 ' + (model || 'deepseek-v4-flash') + ' · 本轮 token：缓存命中 ' + hit.toLocaleString() + ' / 未命中 ' + miss.toLocaleString() + ' / 输出 ' + (out + reason).toLocaleString() + '（' + (peak ? '高峰时段' : '空闲时段') + '）'
+      return React.createElement('span', {
+        className: 'wfr-tokencost',
+        title: title,
+        style: baseStyle,
+      }, label)
+    }
+
+    slots.inject('conversation.chat.assistant-actions', () => slots.register(
+      { name: 'conversation.chat.assistant-actions', id: 'token-cost', order: 20 },
+      (props) => React.createElement(TokenCostCell, props),
+    ))
+
     ctx.effect(() => disposeStyles)
   
     };
