@@ -1,0 +1,5 @@
+# dsh-workspace-files bundle layer: workspace file panel plugin.
+- insert:
+    - id: dsh-workspace-files
+      name: '@dsh-external/dsh-workspace-files'
+      config: {}
