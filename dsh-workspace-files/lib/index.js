@@ -324,6 +324,7 @@ handlers['workspace-root'] = async () => {
 
     const modelCache = new Map()
     let modelCacheSession = null
+    let modelCacheLastModel = null
     handlers['turn-model'] = async (args) => {
       const sessionQuery = ctx.get('sessionQuery')
       if (sessionQuery === undefined) return { model: null, reason: 'no-sessionQuery' }
@@ -332,17 +333,21 @@ handlers['workspace-root'] = async () => {
         if (modelCacheSession !== args.sessionId) {
           modelCacheSession = args.sessionId
           modelCache.clear()
+          modelCacheLastModel = null
           const loaded = await sessionQuery.readSession(args.sessionId)
           const events = (loaded && loaded.events) || []
           for (const e of events) {
             if (e && e.type === 'assistant/message' && e.data && e.data.message && e.data.message.source && e.data.message.id) {
               const s = e.data.message.source
+              if (typeof s.model === 'string' && s.model) modelCacheLastModel = s.model
               modelCache.set(String(e.data.message.id), { model: s.model || null, provider: s.provider || null })
             }
           }
         }
         const entry = modelCache.get(String(args.messageId))
-        return { model: entry ? entry.model : null, provider: entry ? entry.provider : null, cached: modelCache.size }
+        if (entry) return { model: entry.model, provider: entry.provider, cached: modelCache.size }
+        // 查不到该消息：回退到会话最近模型（DeepSeek 会话通常单模型）
+        return { model: modelCacheLastModel, provider: null, cached: modelCache.size, fallback: true }
       } catch (err) {
         return { model: null, error: String((err && err.message) || err) }
       }
