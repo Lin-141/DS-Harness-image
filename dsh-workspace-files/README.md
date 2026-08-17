@@ -10,6 +10,9 @@
 - **文件类型图标**：内置 Trae（iCube）深色主题全套 59 个彩色 SVG 图标，按扩展名区分文件类型；浅色主题自动回退工作区 / Trae 安装目录
 - **外观设置**：Hermes 6 预设主题 + **L's Image 内置默认主题** + 自定义主题（11 色拾色器、保存 / 编辑 / 删除）
 - **字体设置**：选择系统字体或枚举电脑全部已安装字体，持久化到 localStorage
+- **Token 用量与费用**：每条回复下显示 `¥费用 · 未命中率`（hover 看完整 token 明细）；自动识别模型并计费
+  - **DeepSeek 官方模型**（v4-flash / v4-pro）：人民币官方峰谷价（高峰 9:00-12:00 / 14:00-18:00 翻倍）
+  - **其他厂商模型**（OpenAI / Anthropic / Google / Grok / Kimi / MiniMax / GLM 等 37 家，共 1109 个）：美元价（USD/百万 tokens），内嵌 pi-ai 模型目录价格，显示 `$费用`
 - **持久化**：主题、自定义主题、字体均保存在浏览器 localStorage，刷新自动恢复
 
 ## 安装（部署级，持久）
@@ -42,8 +45,11 @@ dsh plugin --profile web add D:\dsh-workspace-files
 |---|---|
 | `lib/index.js` | Host 半：文件系统 RPC（`/wfr/api` 前缀路由，webServer 注入） |
 | `lib/client.js` | Client 半：React UI（`__ModuleLoader__` 格式） |
+| `lib/prices.json` | 价格表数据源（pi-ai 模型目录导出，37 家厂商 / 1109 模型） |
 | `cordis.patch.yml` | bundle 补丁层，插入 `dsh-workspace-files` 插件行 |
 | `package.json` | bundle 元数据（`dsh.bundle` + `dsh.client` 声明） |
+
+> **价格表更新**：`lib/prices.json` 由 `@earendil-works/pi-ai` 的 `dist/providers/data/*.json` 导出（`_extract-prices.cjs` 脚本），嵌入 `lib/client.js` 的 `WFR_PIAI_PRICES`。若厂商调价，重新导出并嵌入即可。
 
 ## 说明
 
