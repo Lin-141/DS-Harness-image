@@ -322,7 +322,29 @@ handlers['workspace-root'] = async () => {
       return { fonts: Array.from(new Set(names)).sort((a, b) => a.localeCompare(b)) }
     }
 
-    
+    const modelCache = new Map()
+    let modelCacheSession = null
+    handlers['turn-model'] = async (args) => {
+      const sessionQuery = ctx.get('sessionQuery')
+      if (sessionQuery === undefined) return { model: null, reason: 'no-sessionQuery' }
+      if (!args || typeof args.sessionId !== 'string' || typeof args.messageId !== 'string') return { model: null, reason: 'bad-args' }
+      try {
+        if (modelCacheSession !== args.sessionId) {
+          modelCacheSession = args.sessionId
+          modelCache.clear()
+          const loaded = await sessionQuery.readSession(args.sessionId)
+          const events = (loaded && loaded.events) || []
+          for (const e of events) {
+            if (e && e.type === 'assistant/message' && e.data && e.data.message && e.data.message.source && e.data.message.id) {
+              modelCache.set(String(e.data.message.id), e.data.message.source.model || null)
+            }
+          }
+        }
+        return { model: modelCache.get(String(args.messageId)) || null, cached: modelCache.size }
+      } catch (err) {
+        return { model: null, error: String((err && err.message) || err) }
+      }
+    }
 
     const webServer = ctx.get('webServer')
     if (webServer !== undefined) {
