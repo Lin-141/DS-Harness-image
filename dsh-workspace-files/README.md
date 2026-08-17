@@ -1,6 +1,6 @@
-# DSH 工作区文件面板插件
+# DSH 工作区文件面板插件（部署级 bundle）
 
-一个运行在 [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/dsh) 上的动态 Cordis 插件，为会话提供右侧工作区文件面板。
+一个运行在 [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/dsh) 上的**部署级 Cordis bundle 插件**，为会话提供右侧工作区文件面板。装配进 profile 的 bundles 列表后**重启自动加载**，不再随进程丢失。
 
 ## 功能
 
@@ -12,13 +12,23 @@
 - **字体设置**：选择系统字体或枚举电脑全部已安装字体，持久化到 localStorage
 - **持久化**：主题、自定义主题、字体均保存在浏览器 localStorage，刷新自动恢复
 
-## 安装
+## 安装（部署级，持久）
 
-DSH 中通过动态 Cordis 插件加载：
+先确保 pnpm 在 PATH（dsh plugin 命令依赖它）：
 
-```text
-cordis_define → code.host = src/host.js, code.client = src/client.js → cordis_run
+```powershell
+npm install -g pnpm
 ```
+
+把本目录下载到本地，例如 `D:\dsh-workspace-files`，然后装配进 web profile：
+
+```powershell
+dsh plugin --profile web add D:\dsh-workspace-files
+```
+
+重启 DSH web，刷新页面后，会话标题栏最左侧会出现面板开关按钮。
+
+装配后 profile 的 `package.json` 里 `dsh.profile.bundles` 会包含 `@dsh-external/dsh-workspace-files`，重启由 bundles 接管。
 
 ## 使用
 
@@ -26,19 +36,21 @@ cordis_define → code.host = src/host.js, code.client = src/client.js → cordi
 2. 单击选择文件，双击打开预览，右键呼出操作菜单
 3. 设置 → 外观：切换主题、自定义主题、选择界面字体
 
-## 配置说明
+## 结构
 
-- 图标来源优先级：插件内嵌（深色主题）→ 工作区 `trae-icons/dark|light` → Trae 安装目录
-- 若需自定义图标，替换 `trae-icons` 目录下同名 SVG 即可
+| 文件 | 作用 |
+|---|---|
+| `lib/index.js` | Host 半：文件系统 RPC（`/wfr/api` 前缀路由，webServer 注入） |
+| `lib/client.js` | Client 半：React UI（`__ModuleLoader__` 格式） |
+| `cordis.patch.yml` | bundle 补丁层，插入 `dsh-workspace-files` 插件行 |
+| `package.json` | bundle 元数据（`dsh.bundle` + `dsh.client` 声明） |
 
-## 主题
+## 说明
 
-| 主题 | 说明 |
-| --- | --- |
-| L's Image | 内置默认主题（蓝底 + 金色强调色） |
-| Nous / Midnight / Ember / Mono / Cyberpunk / Slate | Hermes 预设 |
-| 自定义 | 11 个核心色自定并保存 |
+- **bundle 本体 = 本目录**（`dsh plugin add` 用的是 link 依赖），删除目录会导致启动失败；迁移后需同步更新 profile 的链接与 package.json。
+- 图标来源优先级：插件内嵌（深色主题）→ 工作区 `trae-icons` → Trae 安装目录。
+- 本目录中的 `src/` 为历史动态插件源码，仅供参考。
 
-## License
+## 许可证
 
 MIT
