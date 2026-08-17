@@ -1268,17 +1268,20 @@ const TRAE_BASE_ICONS = {"js":"icon.14.explorer.lang.js.svg","jsx":"icon.14.expl
       let currency = '¥'
       let priceNote = ''
       let peakNote = ''
+      let modelKnown = false
       if (model && WFR_PRICES[model]) {
         const price = WFR_PRICES[model]
         const pi = peak ? 1 : 0
         cost = hit / M * price.hit[pi] + miss / M * price.miss[pi] + (out + reason) / M * price.out[pi]
         currency = '¥'
         peakNote = peak ? '（高峰时段）' : '（空闲时段）'
+        modelKnown = true
       } else if (model && provider && WFR_PIAI_PRICES[provider] && WFR_PIAI_PRICES[provider][model]) {
         const p = WFR_PIAI_PRICES[provider][model]
         cost = hit / M * (typeof p.read === 'number' ? p.read : 0) + miss / M * (typeof p.in === 'number' ? p.in : 0) + (out + reason) / M * (typeof p.out === 'number' ? p.out : 0) + write / M * (typeof p.write === 'number' ? p.write : 0)
         currency = '$'
         priceNote = ' · 美元价(USD/百万)'
+        modelKnown = true
       } else if (model) {
         // 回退：按模型名在全部 provider 里找
         for (const provKey of Object.keys(WFR_PIAI_PRICES)) {
@@ -1287,9 +1290,17 @@ const TRAE_BASE_ICONS = {"js":"icon.14.explorer.lang.js.svg","jsx":"icon.14.expl
             cost = hit / M * (typeof entry.read === 'number' ? entry.read : 0) + miss / M * (typeof entry.in === 'number' ? entry.in : 0) + (out + reason) / M * (typeof entry.out === 'number' ? entry.out : 0) + write / M * (typeof entry.write === 'number' ? entry.write : 0)
             currency = '$'
             priceNote = ' · 美元价(USD/百万)'
+            modelKnown = true
             break
           }
         }
+      }
+      // 模型未知（turn-model 未返回/失败）：按 DeepSeek flash 空闲价兜底估算，与旧版本行为一致
+      if (cost === null && !modelKnown) {
+        const price = WFR_PRICES['deepseek-v4-flash']
+        cost = hit / M * price.hit[0] + miss / M * price.miss[0] + (out + reason) / M * price.out[0]
+        currency = '¥'
+        priceNote = ' · 模型未知，按 flash 空闲价估算'
       }
       const missRate = totalInput > 0 ? miss / totalInput : 0
       const baseStyle = { order: 99, color: 'var(--dsw-alias-label-tertiary, var(--dsw-alias-label-secondary))', fontSize: '12px', whiteSpace: 'nowrap', marginLeft: '4px' }
