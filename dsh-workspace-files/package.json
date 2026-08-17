@@ -2,16 +2,6 @@
   "name": "@dsh-external/dsh-workspace-files",
   "version": "1.0.0",
   "description": "DeepSeek Harness (DSH) 工作区文件面板插件（部署级 bundle）：右侧树形文件浏览、右键引用到输入框、Trae 风格交互、文件类型图标、Hermes / L's Image 主题与字体设置。装配进 profile bundles，重启自动加载、不再丢失。",
-  "keywords": [
-    "dsh",
-    "deepseek-harness",
-    "cordis",
-    "bundle",
-    "workspace",
-    "file-panel",
-    "theme",
-    "file-icons"
-  ],
   "private": true,
   "type": "module",
   "main": "./lib/index.js",
@@ -43,5 +33,15 @@
   },
   "peerDependencies": {
     "cordis": ">=4.0.0-rc <5"
-  }
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "cordis",
+    "bundle",
+    "workspace",
+    "file-panel",
+    "theme",
+    "file-icons"
+  ]
 }
