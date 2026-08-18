@@ -1217,9 +1217,9 @@ const TRAE_BASE_ICONS = {"js":"icon.14.explorer.lang.js.svg","jsx":"icon.14.expl
       'deepseek-v4-flash': { hit: [0.05, 0.10], miss: [1.5, 3.0], out: [4.5, 9.0] },
     }
     function TokenCostCell(props) {
-      const snap = props.useSession ? props.useSession((s) => (s && s.chat) ? { sid: s.sessionId, nodes: s.chat.nodes } : undefined) : undefined
-      const effectiveSessionId = (props.sessionId && typeof props.sessionId === 'string' && props.sessionId) ? props.sessionId : (snap ? snap.sid : undefined)
-      const nodes = snap ? snap.nodes : undefined
+      const sid = props.useSession ? props.useSession((s) => (s && typeof s.sessionId === 'string') ? s.sessionId : undefined) : undefined
+      const nodes = props.useSession ? props.useSession((s) => (s && s.chat) ? s.chat.nodes : undefined) : undefined
+      const effectiveSessionId = (props.sessionId && typeof props.sessionId === 'string' && props.sessionId) ? props.sessionId : sid
       const messageId = props.messageId
       const [modelInfo, setModelInfo] = React.useState(null)
       React.useEffect(() => {
