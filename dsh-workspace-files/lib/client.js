@@ -1217,20 +1217,22 @@ const TRAE_BASE_ICONS = {"js":"icon.14.explorer.lang.js.svg","jsx":"icon.14.expl
       'deepseek-v4-flash': { hit: [0.05, 0.10], miss: [1.5, 3.0], out: [4.5, 9.0] },
     }
     function TokenCostCell(props) {
-      const nodes = props.useSession ? props.useSession((s) => (s && s.chat) ? s.chat.nodes : undefined) : undefined
+      const snap = props.useSession ? props.useSession((s) => (s && s.chat) ? { sid: s.sessionId, nodes: s.chat.nodes } : undefined) : undefined
+      const effectiveSessionId = (props.sessionId && typeof props.sessionId === 'string' && props.sessionId) ? props.sessionId : (snap ? snap.sid : undefined)
+      const nodes = snap ? snap.nodes : undefined
       const messageId = props.messageId
       const [modelInfo, setModelInfo] = React.useState(null)
       React.useEffect(() => {
         let alive = true
-        if (props.sessionId && messageId) {
-          host.call('turn-model', { sessionId: props.sessionId, messageId: messageId }).then((res) => {
+        if (effectiveSessionId && messageId) {
+          host.call('turn-model', { sessionId: effectiveSessionId, messageId: messageId }).then((res) => {
             if (alive && res && typeof res.model === 'string') {
               setModelInfo({ model: res.model, provider: typeof res.provider === 'string' ? res.provider : null })
             }
           }).catch(() => {})
         }
         return () => { alive = false }
-      }, [props.sessionId, messageId])
+      }, [effectiveSessionId, messageId])
       let turn = null
       let peak = false
       let matched = false
@@ -1324,7 +1326,7 @@ const TRAE_BASE_ICONS = {"js":"icon.14.explorer.lang.js.svg","jsx":"icon.14.expl
       } else {
         label = currency + cost.toFixed(4) + ' · 未命中 ' + (missRate * 100).toFixed(1) + '%'
       }
-      const title = '模型 ' + (model || '未知') + (provider ? ' (' + provider + ')' : '') + ' · 本轮 token：缓存命中 ' + hit.toLocaleString() + ' / 未命中 ' + miss.toLocaleString() + ' / 输出 ' + (out + reason).toLocaleString() + (write > 0 ? ' / 缓存写入 ' + write.toLocaleString() : '') + priceNote + peakNote
+      const title = '模型 ' + (model || '未知') + (provider ? ' (' + provider + ')' : '') + ' · 本轮 token：缓存命中 ' + hit.toLocaleString() + ' / 未命中 ' + miss.toLocaleString() + ' / 输出 ' + (out + reason).toLocaleString() + (write > 0 ? ' / 缓存写入 ' + write.toLocaleString() : '') + priceNote + peakNote + ' [sid=' + String(props.sessionId) + ' mid=' + String(messageId) + ']'
       return React.createElement('span', {
         className: 'wfr-tokencost',
         title: title,
