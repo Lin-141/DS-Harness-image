@@ -323,7 +323,26 @@ handlers['workspace-root'] = async () => {
     }
 
     // ===== 对话完成 Windows 通知 =====
-    let notifyEnabled = true
+    async function runShellWithPolicy(script, timeoutMs) {
+      if (shell === undefined) return { error: 'shell 服务不可用' }
+      try {
+        const { root } = await resolveRoot()
+        const spec = shell.resolve({
+          command: script,
+          workdir: root,
+          timeoutMs: timeoutMs || 15000,
+          // 事件回调里没有调用方 sandbox 上下文，显式放开策略执行 toast
+          sandboxPolicy: { mode: 'danger-full-access', workspaceRoot: root },
+        })
+        const result = await shell.run(spec)
+        const stdout = (result.stdout && result.stdout.text) || ''
+        if (result.exitCode !== 0) return { error: '命令执行失败，退出码 ' + String(result.exitCode), stdout: stdout }
+        return { ok: true, stdout: stdout }
+      } catch (err) {
+        return { error: String((err && err.message) || err) }
+      }
+    }
+    let notifyEnabled = false
     let lastToastAt = 0
     let notifyTimer = null
     function notifyThrottled(title, body) {
@@ -335,37 +354,28 @@ handlers['workspace-root'] = async () => {
     }
     async function showToast(title, body) {
       if (shell === undefined) return
-      // 写临时 ps1 文件执行，完全避开 -Command 引号转义问题
+      // shell 服务即 pwsh：直接传 PowerShell 脚本。中文用 base64 内嵌，避免脚本编码问题
       const clean = (s) => String(s || '').replace(/[\r\n]/g, ' ').replace(/[<>"']/g, ' ').slice(0, 200)
       const t = clean(title)
       const b = clean(body).slice(0, 300)
-      const ps =
-        "Add-Type -AssemblyName System.Runtime.WindowsRuntime\n" +
-        "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null\n" +
-        "$x = [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime]::new()\n" +
-        "$x.LoadXml('<toast><visual><binding template=\"ToastGeneric\"><text>" + t + "</text><text>" + b + "</text></binding></visual></toast>')\n" +
-        "$tt = [Windows.UI.Notifications.ToastNotification, Windows.UI.Notifications, ContentType = WindowsRuntime]::new($x)\n" +
-        "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('DSH Workspace').Show($tt)\n"
-      let tmpFile = ''
+      let tB64 = '', bB64 = ''
       try {
-        const fsSvc = ctx.get('fs')
-        if (fsSvc === undefined) return
-        const { root } = await resolveRoot()
-        tmpFile = root.replace(/\\$/, '') + '\\.dsh-toast-' + Date.now() + '-' + Math.floor(Math.random() * 100000) + '.ps1'
-        const target = await fsSvc.resolve(tmpFile)
-        await fsSvc.writeText(target, ps, { kind: 'createIfAbsent' })
-        const spec = shell.resolve({ command: 'powershell -NoProfile -STA -ExecutionPolicy Bypass -File ' + q(tmpFile), workdir: root, timeoutMs: 15000 })
-        await shell.run(spec)
-      } catch (e) {
-        // 通知失败不影响主流程
-      } finally {
-        if (tmpFile) {
-          try {
-            const { root } = await resolveRoot()
-            const spec = shell.resolve({ command: 'Remove-Item -Force -LiteralPath ' + q(tmpFile), workdir: root, timeoutMs: 8000 })
-            await shell.run(spec)
-          } catch (e) {}
-        }
+        const enc = new TextEncoder()
+        tB64 = bytesToBase64(enc.encode(t))
+        bB64 = bytesToBase64(enc.encode(b))
+      } catch (e) {}
+      const ps =
+        "Add-Type -AssemblyName System.Runtime.WindowsRuntime; " +
+        "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null; " +
+        "$t = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + tB64 + "')); " +
+        "$b = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + bB64 + "')); " +
+        "$x = [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime]::new(); " +
+        "$x.LoadXml('<toast><visual><binding template=\"ToastGeneric\"><text>$t</text><text>$b</text></binding></visual></toast>'); " +
+        "$tt = [Windows.UI.Notifications.ToastNotification, Windows.UI.Notifications, ContentType = WindowsRuntime]::new($x); " +
+        "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('DSH Workspace').Show($tt)"
+      const res = await runShellWithPolicy(ps, 15000)
+      if (res.error) {
+        console.error('[wfr] toast failed:', res.error, res.stdout ? res.stdout.slice(0, 200) : '')
       }
     }
 
@@ -445,53 +455,65 @@ handlers['workspace-root'] = async () => {
       }), 'wfr: api')
     }
 
-    // ===== 对话完成通知：监听 session 事件流 =====
-    ctx.on('session/event', (session, event) => {
-      if (!notifyEnabled) return
-      if (!event || event.type !== 'turn/end') return
-      const reason = event.data && event.data.reason
-      if (!reason || reason.kind !== 'completed') return
-      const sessionId = session && session.id
-      if (!sessionId) return
-      const turnNo = event.data && event.data.turn
-      // 异步收集标题与内容后弹通知
-      Promise.resolve().then(async () => {
+    // ===== 对话完成通知：由 Client 检测完成并调用本 handler =====
+    // 不在 host 轮询 session（避免大日志内存问题），Client 渲染到 settled 时
+    // 主动调用 turn-notify，host 只做一次轻量读取 + 弹 toast。
+    const notifiedTurns = new Map() // sessionId -> Set(turnNo)
+    handlers['turn-notify'] = async (args) => {
+      if (!notifyEnabled) return { ok: false, reason: 'disabled' }
+      const sessionId = args && typeof args.sessionId === 'string' ? args.sessionId : ''
+      const turnNo = args && typeof args.turn === 'number' ? args.turn : 0
+      if (!sessionId || turnNo <= 0) return { ok: false, reason: 'bad-args' }
+      let done = notifiedTurns.get(sessionId)
+      if (!done) { done = new Set(); notifiedTurns.set(sessionId, done) }
+      if (done.has(turnNo)) return { ok: false, reason: 'duplicate' }
+      done.add(turnNo)
+      if (done.size > 200) notifiedTurns.set(sessionId, new Set([...done].slice(-100)))
+      // 延迟 1.2s 等持久化完成再读取（用 timer 服务，host 无原生 setTimeout）
+      const timerSvc = ctx.get('timer')
+      if (timerSvc !== undefined) {
+        timerSvc.timeout(() => { notifyForTurn(sessionId, turnNo).catch(() => {}) }, 1200)
+      } else {
+        notifyForTurn(sessionId, turnNo).catch(() => {})
+      }
+      return { ok: true }
+    }
+    async function notifyForTurn(sessionId, turnNo) {
+      try {
+        const sessionQuery = ctx.get('sessionQuery')
+        if (sessionQuery === undefined) return
+        let title = ''
         try {
-          const sessionQuery = ctx.get('sessionQuery')
-          if (sessionQuery === undefined) return
-          let title = ''
-          try {
-            const ts = await sessionQuery.readTitle(sessionId)
-            title = (ts && ts.title) || ''
-          } catch (e) {}
-          let question = ''
-          let answer = ''
-          try {
-            const loaded = await sessionQuery.readSession(sessionId)
-            const events = (loaded && loaded.events) || []
-            for (let i = events.length - 1; i >= 0; i--) {
-              const e = events[i]
-              if (!e || !e.data) continue
-              if (e.type === 'user/message' && !question) {
-                const blocks = e.data.content
-                if (Array.isArray(blocks)) {
-                  question = blocks.map((b) => (b && typeof b.text === 'string') ? b.text : '').join(' ').trim().slice(0, 120)
-                }
-              }
-              if (e.type === 'assistant/message' && e.data.message && !answer) {
-                const blocks = e.data.message.content
-                if (Array.isArray(blocks)) {
-                  answer = blocks.map((b) => (b && typeof b.text === 'string' && b.type !== 'reasoning') ? b.text : '').join(' ').trim().slice(0, 200)
-                }
-              }
-              if (question && answer) break
-            }
-          } catch (e) {}
-          const head = title || ('对话 ' + String(turnNo || ''))
-          notifyThrottled(head, (question ? '问：' + question + '\n' : '') + (answer ? '答：' + answer : '回答完成'))
+          const ts = await sessionQuery.readTitle(sessionId)
+          title = (ts && ts.title) || ''
         } catch (e) {}
-      })
-    })
+        let question = ''
+        let answer = ''
+        try {
+          const loaded = await sessionQuery.readSession(sessionId)
+          const events = (loaded && loaded.events) || []
+          for (let i = events.length - 1; i >= 0; i--) {
+            const e = events[i]
+            if (!e || !e.data) continue
+            if (e.type === 'user/message' && !question) {
+              const blocks = e.data.content
+              if (Array.isArray(blocks)) {
+                question = blocks.map((b) => (b && typeof b.text === 'string') ? b.text : '').join(' ').trim().slice(0, 120)
+              }
+            }
+            if (e.type === 'assistant/message' && e.data.message && !answer) {
+              const blocks = e.data.message.content
+              if (Array.isArray(blocks)) {
+                answer = blocks.map((b) => (b && typeof b.text === 'string' && b.type !== 'reasoning') ? b.text : '').join(' ').trim().slice(0, 200)
+              }
+            }
+            if (question && answer) break
+          }
+        } catch (e) {}
+        const head = title || ('对话 ' + String(turnNo || ''))
+        notifyThrottled(head, (question ? '问：' + question + '\n' : '') + (answer ? '答：' + answer : '回答完成'))
+      } catch (e) {}
+    }
 
   },
 }
