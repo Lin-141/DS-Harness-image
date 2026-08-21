@@ -110,6 +110,13 @@ window.__ModuleLoader__.load({
 .wfr-color-row input[type=color] { width: 32px; height: 22px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 4px; background: transparent; padding: 0; cursor: pointer; }
 .wfr-form-actions { display: flex; gap: 6px; justify-content: flex-end; }
 .wfr-font-row { display: flex; flex-direction: column; gap: 6px; }
+.wfr-notify-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 2px; }
+.wfr-notify-label { font-size: 13px; color: var(--dsw-alias-label-primary); }
+.wfr-switch { position: relative; width: 40px; height: 22px; border-radius: 11px; border: 1px solid var(--dsw-alias-border-l1); background: var(--dsw-alias-bg-layer-2); cursor: pointer; padding: 0; transition: background 0.15s ease, border-color 0.15s ease; flex-shrink: 0; }
+.wfr-switch:hover { border-color: var(--dsw-alias-border-l2); }
+.wfr-switch-thumb { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--dsw-alias-label-secondary); transition: transform 0.15s ease, background 0.15s ease; }
+.wfr-switch-on { background: var(--dsw-alias-brand-primary); border-color: var(--dsw-alias-brand-primary); }
+.wfr-switch-on .wfr-switch-thumb { transform: translateX(18px); background: #fff; }
 .wfr-select { padding: 5px 8px; border-radius: 6px; border: 1px solid var(--dsw-alias-border-l1); background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); font-size: 12.5px; max-width: 100%; }
 .wfr-select:focus { outline: none; border-color: var(--dsw-alias-brand-primary); }
 `)
@@ -517,6 +524,21 @@ const TRAE_BASE_ICONS = {"js":"icon.14.explorer.lang.js.svg","jsx":"icon.14.expl
       const [fontInput, setFontInput] = React.useState('')
       const [installed, setInstalled] = React.useState(fontsCache || [])
       const [fontLoading, setFontLoading] = React.useState(false)
+      const [notifyOn, setNotifyOn] = React.useState(true)
+
+      // 通知开关：读取 localStorage + 上报 host
+      React.useEffect(() => {
+        let stored = true
+        try { if (typeof localStorage !== 'undefined') stored = localStorage.getItem('wfr-notify-enabled') !== '0' } catch (e) {}
+        setNotifyOn(stored)
+        host.call('notify-enabled', { enabled: stored }).catch(() => {})
+      }, [])
+
+      const toggleNotify = (next) => {
+        setNotifyOn(next)
+        try { if (typeof localStorage !== 'undefined') localStorage.setItem('wfr-notify-enabled', next ? '1' : '0') } catch (e) {}
+        host.call('notify-enabled', { enabled: next }).catch(() => {})
+      }
 
       const applyPreset = (id) => {
         setPreset(id)
@@ -669,6 +691,21 @@ const TRAE_BASE_ICONS = {"js":"icon.14.explorer.lang.js.svg","jsx":"icon.14.expl
             ),
           ),
         ) : null,
+        React.createElement('div', { className: 'wfr-card' },
+          React.createElement('div', { className: 'wfr-desc' }, '对话完成通知：回合结束后在 Windows 右下角弹出系统通知，显示对话标题、问题和回答。'),
+          React.createElement('div', { className: 'wfr-notify-row' },
+            React.createElement('span', { className: 'wfr-notify-label' }, '完成时弹出 Windows 通知'),
+            React.createElement('button', {
+              className: 'wfr-switch' + (notifyOn ? ' wfr-switch-on' : ''),
+              role: 'switch',
+              'aria-checked': notifyOn,
+              title: notifyOn ? '点击关闭通知' : '点击开启通知',
+              onClick: () => toggleNotify(!notifyOn),
+            },
+              React.createElement('span', { className: 'wfr-switch-thumb' }),
+            ),
+          ),
+        ),
         React.createElement('div', { className: 'wfr-card' },
           React.createElement('div', { className: 'wfr-desc' }, '界面字体：选择系统常见字体或下方列出的电脑全部已安装字体；也可手动输入任意字体名称。选择后持久化。'),
           React.createElement('div', { className: 'wfr-font-row' },
