@@ -322,9 +322,63 @@ handlers['workspace-root'] = async () => {
       return { fonts: Array.from(new Set(names)).sort((a, b) => a.localeCompare(b)) }
     }
 
+    // ===== 对话完成 Windows 通知 =====
+    let notifyEnabled = true
+    let lastToastAt = 0
+    let notifyTimer = null
+    function notifyThrottled(title, body) {
+      const now = Date.now()
+      // 同一秒内最多一条，避免 turn 内多次 tool 循环触发多条
+      if (now - lastToastAt < 1500) return
+      lastToastAt = now
+      showToast(title, body)
+    }
+    async function showToast(title, body) {
+      if (shell === undefined) return
+      // 写临时 ps1 文件执行，完全避开 -Command 引号转义问题
+      const clean = (s) => String(s || '').replace(/[\r\n]/g, ' ').replace(/[<>"']/g, ' ').slice(0, 200)
+      const t = clean(title)
+      const b = clean(body).slice(0, 300)
+      const ps =
+        "Add-Type -AssemblyName System.Runtime.WindowsRuntime\n" +
+        "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null\n" +
+        "$x = [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime]::new()\n" +
+        "$x.LoadXml('<toast><visual><binding template=\"ToastGeneric\"><text>" + t + "</text><text>" + b + "</text></binding></visual></toast>')\n" +
+        "$tt = [Windows.UI.Notifications.ToastNotification, Windows.UI.Notifications, ContentType = WindowsRuntime]::new($x)\n" +
+        "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('DSH Workspace').Show($tt)\n"
+      let tmpFile = ''
+      try {
+        const fsSvc = ctx.get('fs')
+        if (fsSvc === undefined) return
+        const { root } = await resolveRoot()
+        tmpFile = root.replace(/\\$/, '') + '\\.dsh-toast-' + Date.now() + '-' + Math.floor(Math.random() * 100000) + '.ps1'
+        const target = await fsSvc.resolve(tmpFile)
+        await fsSvc.writeText(target, ps, { kind: 'createIfAbsent' })
+        const spec = shell.resolve({ command: 'powershell -NoProfile -STA -ExecutionPolicy Bypass -File ' + q(tmpFile), workdir: root, timeoutMs: 15000 })
+        await shell.run(spec)
+      } catch (e) {
+        // 通知失败不影响主流程
+      } finally {
+        if (tmpFile) {
+          try {
+            const { root } = await resolveRoot()
+            const spec = shell.resolve({ command: 'Remove-Item -Force -LiteralPath ' + q(tmpFile), workdir: root, timeoutMs: 8000 })
+            await shell.run(spec)
+          } catch (e) {}
+        }
+      }
+    }
+
     const modelCache = new Map()
     let modelCacheSession = null
     let modelCacheLastModel = null
+    handlers['notify-enabled'] = async (args) => {
+      if (args && typeof args.enabled === 'boolean') {
+        notifyEnabled = args.enabled
+      }
+      return { enabled: notifyEnabled }
+    }
+
     handlers['turn-model'] = async (args) => {
       const sessionQuery = ctx.get('sessionQuery')
       if (sessionQuery === undefined) return { model: null, reason: 'no-sessionQuery' }
@@ -390,6 +444,54 @@ handlers['workspace-root'] = async () => {
         }
       }), 'wfr: api')
     }
+
+    // ===== 对话完成通知：监听 session 事件流 =====
+    ctx.on('session/event', (session, event) => {
+      if (!notifyEnabled) return
+      if (!event || event.type !== 'turn/end') return
+      const reason = event.data && event.data.reason
+      if (!reason || reason.kind !== 'completed') return
+      const sessionId = session && session.id
+      if (!sessionId) return
+      const turnNo = event.data && event.data.turn
+      // 异步收集标题与内容后弹通知
+      Promise.resolve().then(async () => {
+        try {
+          const sessionQuery = ctx.get('sessionQuery')
+          if (sessionQuery === undefined) return
+          let title = ''
+          try {
+            const ts = await sessionQuery.readTitle(sessionId)
+            title = (ts && ts.title) || ''
+          } catch (e) {}
+          let question = ''
+          let answer = ''
+          try {
+            const loaded = await sessionQuery.readSession(sessionId)
+            const events = (loaded && loaded.events) || []
+            for (let i = events.length - 1; i >= 0; i--) {
+              const e = events[i]
+              if (!e || !e.data) continue
+              if (e.type === 'user/message' && !question) {
+                const blocks = e.data.content
+                if (Array.isArray(blocks)) {
+                  question = blocks.map((b) => (b && typeof b.text === 'string') ? b.text : '').join(' ').trim().slice(0, 120)
+                }
+              }
+              if (e.type === 'assistant/message' && e.data.message && !answer) {
+                const blocks = e.data.message.content
+                if (Array.isArray(blocks)) {
+                  answer = blocks.map((b) => (b && typeof b.text === 'string' && b.type !== 'reasoning') ? b.text : '').join(' ').trim().slice(0, 200)
+                }
+              }
+              if (question && answer) break
+            }
+          } catch (e) {}
+          const head = title || ('对话 ' + String(turnNo || ''))
+          notifyThrottled(head, (question ? '问：' + question + '\n' : '') + (answer ? '答：' + answer : '回答完成'))
+        } catch (e) {}
+      })
+    })
 
   },
 }
