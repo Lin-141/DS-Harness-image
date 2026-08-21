@@ -738,15 +738,43 @@ const TRAE_BASE_ICONS = {"js":"icon.14.explorer.lang.js.svg","jsx":"icon.14.expl
     function HeaderToggle(props) {
       const input = props.useInput((s) => s)
       const wsState = props.useWorkspaces((s) => s)
+      const sessionId = props.sessionId
       let wsPath = ''
       const items = (wsState && wsState.items) || []
-      const mine = items.find((w) => w.sessionIds.indexOf(props.sessionId) >= 0)
+      const mine = items.find((w) => w.sessionIds.indexOf(sessionId) >= 0)
       if (mine) {
         wsPath = mine.path
       } else if (wsState && wsState.recentWorkspaceId) {
         const recent = items.find((w) => w.workspaceId === wsState.recentWorkspaceId)
         if (recent) wsPath = recent.path
       }
+      // ===== 对话完成通知检测：订阅 nodes，检测新 settled 的 turn =====
+      const notifyNodes = props.useSession ? props.useSession((s) => (s && s.chat && s.chat.nodes) ? s.chat.nodes : undefined) : undefined
+      const notifyDoneRef = React.useRef({})
+      React.useEffect(() => {
+        if (!notifyNodes || !sessionId) return
+        // 找出所有已 settled/interrupted 的 assistant-step，取每个 turn 的最大 step 判断完成
+        const completedTurns = {}
+        for (const node of notifyNodes.values()) {
+          if (!node || node.kind !== 'assistant-step' || !node.data) continue
+          const st = node.data.status
+          if (st !== 'settled' && st !== 'interrupted') continue
+          const t = node.data.turn
+          const step = node.data.step
+          if (typeof t !== 'number' || t <= 0) continue
+          if (!completedTurns[t] || (typeof step === 'number' && step > completedTurns[t])) completedTurns[t] = step
+        }
+        const doneMap = notifyDoneRef.current
+        for (const t of Object.keys(completedTurns)) {
+          const turnNo = Number(t)
+          if (doneMap[turnNo]) continue
+          doneMap[turnNo] = true
+          // 限制记录量
+          const keys = Object.keys(doneMap)
+          if (keys.length > 200) { delete doneMap[keys[0]] }
+          host.call('turn-notify', { sessionId: sessionId, turn: turnNo }).catch(() => {})
+        }
+      }, [notifyNodes, sessionId])
       React.useEffect(() => {
         store.setInput(props.inputActions, input ? input.draft : '')
         store.setWorkspace(wsPath)
