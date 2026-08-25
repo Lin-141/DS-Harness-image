@@ -1,7 +1,7 @@
 {
   "name": "@dsh-external/dsh-workspace-files",
-  "version": "1.1.0",
-  "description": "DeepSeek Harness (DSH) 界面美化插件（部署级 bundle）：Hermes / L's Image 预设主题、自定义主题（11 色）、界面字体选择与枚举。装配进 profile bundles，重启自动加载。工作区文件面板与费用统计已移除，改用社区插件。",
+  "version": "1.2.0",
+  "description": "DeepSeek Harness (DSH) 工作区文件面板 + 界面美化插件（部署级 bundle）：右侧树形文件浏览、右键引用到输入框、Trae 风格交互、文件类型图标、Hermes / L's Image 主题与字体设置。费用统计已移除，改用 dsh-cost-meter。",
   "private": true,
   "type": "module",
   "main": "./lib/index.js",
